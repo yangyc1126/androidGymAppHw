@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -12,80 +13,263 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 import com.example.gymapp.ui.theme.GymAppTheme
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            // 強制使用深色主題以符合截圖風格
             GymAppTheme(darkTheme = true) {
-                MainScreen()
+                MainApp()
             }
         }
     }
 }
 
-// 定義卡片資料結構
 data class WorkoutItem(
     val title: String,
     val duration: String,
     val level: String? = null,
-    val color: Color // 用顏色暫代圖片
+    val color: Color
 )
 
 @Composable
-fun MainScreen() {
+fun MainApp() {
+    val navController = rememberNavController()
+    val historyRecords = remember { mutableStateListOf<HistoryRecord>() }
+
+    // 判斷是否需要顯示底部導航欄 (登入頁不需要)
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val showBottomBar = currentRoute != Screen.Login.route
+
     Scaffold(
-        bottomBar = { BottomNavBar() },
-        containerColor = Color(0xFF121212) // 深色背景
+        bottomBar = {
+            if (showBottomBar) {
+                BottomNavBar(navController)
+            }
+        },
+        containerColor = Color(0xFF121212)
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()) // 讓整個頁面可以垂直滑動
+        NavHost(
+            navController = navController,
+            startDestination = Screen.Login.route, // 修改起始頁為登入頁
+            modifier = Modifier.padding(innerPadding)
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            // 0. 登入頁 (Login)
+            composable(Screen.Login.route) {
+                LoginScreen(
+                    onLoginSuccess = {
+                        // 登入成功，前往首頁，並清除登入頁的堆疊 (避免按返回鍵回到登入頁)
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Login.route) { inclusive = true }
+                        }
+                    }
+                )
+            }
 
-            // 頂部標題列
-            TopHeader()
+            // 1. 首頁
+            composable(Screen.Home.route) {
+                HomeScreen(
+                    onWorkoutClick = { title, duration ->
+                        navController.navigate(Screen.Detail.createRoute(title, duration))
+                    }
+                )
+            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // 2. 詳細頁
+            composable(Screen.Detail.route) { backStackEntry ->
+                val title = backStackEntry.arguments?.getString("workoutTitle") ?: "Unknown"
+                val duration = backStackEntry.arguments?.getString("workoutDuration") ?: "0 min"
 
-            // 搜尋欄
-            SearchBar()
+                WorkoutDetailScreen(
+                    navController = navController,
+                    workoutTitle = title,
+                    workoutDuration = duration,
+                    onStartWorkout = {
+                        navController.navigate(Screen.Execution.createRoute(title, duration))
+                    }
+                )
+            }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            // 3. 執行頁
+            composable(Screen.Execution.route) { backStackEntry ->
+                val title = backStackEntry.arguments?.getString("workoutTitle") ?: "Unknown"
+                val duration = backStackEntry.arguments?.getString("workoutDuration") ?: "0 min"
 
-            // Section 1: Featured
-            SectionTitle("Featured")
-            FeaturedSection()
+                WorkoutExecutionScreen(
+                    navController = navController,
+                    workoutTitle = title,
+                    workoutDuration = duration,
+                    onWorkoutComplete = {
+                        val currentDate = getCurrentDate()
+                        historyRecords.add(0, HistoryRecord(title, duration, currentDate))
 
-            Spacer(modifier = Modifier.height(24.dp))
+                        navController.navigate(Screen.Completion.route) {
+                            popUpTo(Screen.Home.route) { inclusive = false }
+                        }
+                    }
+                )
+            }
 
-            // Section 2: Quick Workouts
-            SectionTitle("Quick Workouts")
-            QuickWorkoutsSection()
+            // 4. 完賽頁
+            composable(Screen.Completion.route) {
+                CompletionScreen(
+                    onGoHome = {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                        }
+                    }
+                )
+            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // 5. 歷史紀錄頁
+            composable(Screen.History.route) {
+                HistoryScreen(
+                    historyRecords = historyRecords,
+                    onDeleteRecord = { record ->
+                        historyRecords.remove(record)
+                    }
+                )
+            }
+
+            // 6. 個人頁面
+            composable(Screen.Profile.route) {
+                val stats by remember {
+                    derivedStateOf { calculateStats(historyRecords) }
+                }
+
+                ProfileScreen(
+                    totalWorkouts = stats.totalWorkouts,
+                    totalMinutes = stats.totalMinutes,
+                    totalCalories = stats.totalCalories,
+                    onSettingsClick = {
+                        navController.navigate(Screen.Settings.route)
+                    }
+                )
+            }
+
+            // 7. 設定頁面
+            composable(Screen.Settings.route) {
+                SettingsScreen(
+                    navController = navController,
+                    onSignOut = {
+                        // 登出，回到登入頁，並清除所有歷史堆疊
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                )
+            }
         }
+    }
+}
+
+data class UserStats(
+    val totalWorkouts: Int,
+    val totalMinutes: Int,
+    val totalCalories: Int
+)
+
+fun calculateStats(records: List<HistoryRecord>): UserStats {
+    var minutes = 0
+    var calories = 0
+
+    records.forEach { record ->
+        val m = try {
+            record.duration.trim().split(" ")[0].toInt()
+        } catch (e: Exception) { 0 }
+
+        val c = try {
+            record.calories.trim().split(" ")[0].toInt()
+        } catch (e: Exception) { 0 }
+
+        minutes += m
+        calories += c
+    }
+
+    return UserStats(
+        totalWorkouts = records.size,
+        totalMinutes = minutes,
+        totalCalories = calories
+    )
+}
+
+fun getCurrentDate(): String {
+    val sdf = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
+    return sdf.format(Date())
+}
+
+// === 以下為 UI 元件 ===
+
+@Composable
+fun BottomNavBar(navController: NavController) {
+    NavigationBar(containerColor = Color(0xFF1C1C1E)) {
+        val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentDestination = navBackStackEntry?.destination
+
+        Screen.items.forEach { screen ->
+            NavigationBarItem(
+                icon = { Icon(screen.icon, contentDescription = screen.title) },
+                label = { Text(screen.title) },
+                selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                onClick = {
+                    navController.navigate(screen.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = Color.White,
+                    selectedTextColor = Color.White,
+                    indicatorColor = Color(0xFF333333),
+                    unselectedIconColor = Color.Gray,
+                    unselectedTextColor = Color.Gray
+                )
+            )
+        }
+    }
+}
+
+@Composable
+fun HomeScreen(onWorkoutClick: (String, String) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        Spacer(modifier = Modifier.height(16.dp))
+        TopHeader()
+        Spacer(modifier = Modifier.height(16.dp))
+        SearchBar()
+        Spacer(modifier = Modifier.height(24.dp))
+        SectionTitle("Featured")
+        FeaturedSection(onWorkoutClick)
+        Spacer(modifier = Modifier.height(24.dp))
+        SectionTitle("Quick Workouts")
+        QuickWorkoutsSection(onWorkoutClick)
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
@@ -96,19 +280,9 @@ fun TopHeader() {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "Workouts",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White
-        )
-        IconButton(onClick = { /* TODO: Add action */ }) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Add",
-                tint = Color.White,
-                modifier = Modifier.size(32.dp)
-            )
+        Text("Workouts", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        IconButton(onClick = { }) {
+            Icon(Icons.Default.Add, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(32.dp))
         }
     }
 }
@@ -123,7 +297,7 @@ fun SearchBar() {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF2C2C2E)), // 深灰色背景
+            .background(Color(0xFF2C2C2E)),
         colors = TextFieldDefaults.colors(
             focusedContainerColor = Color(0xFF2C2C2E),
             unfocusedContainerColor = Color(0xFF2C2C2E),
@@ -137,35 +311,27 @@ fun SearchBar() {
 
 @Composable
 fun SectionTitle(title: String) {
-    Text(
-        text = title,
-        fontSize = 20.sp,
-        fontWeight = FontWeight.Bold,
-        color = Color.White,
-        modifier = Modifier.padding(bottom = 12.dp)
-    )
+    Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(bottom = 12.dp))
 }
 
 @Composable
-fun FeaturedSection() {
+fun FeaturedSection(onCardClick: (String, String) -> Unit) {
     val items = listOf(
-        WorkoutItem("全身燃脂", "45 min", "Intermediate", Color(0xFF3F51B5)), // 藍色
-        WorkoutItem("核心訓練", "30 min", "Beginner", Color(0xFFFF9800))   // 橘色
+        WorkoutItem("全身燃脂", "45 min", "Intermediate", Color(0xFF3F51B5)),
+        WorkoutItem("核心訓練", "30 min", "Beginner", Color(0xFFFF9800))
     )
-
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         items(items) { item ->
-            FeaturedCard(item)
+            FeaturedCard(item, onClick = { onCardClick(item.title, item.duration) })
         }
     }
 }
 
 @Composable
-fun FeaturedCard(item: WorkoutItem) {
-    Column(modifier = Modifier.width(280.dp)) {
-        // 圖片區域 (暫時用 Box + 顏色代替)
+fun FeaturedCard(item: WorkoutItem, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier.width(280.dp).clickable(onClick = onClick)
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -173,7 +339,6 @@ fun FeaturedCard(item: WorkoutItem) {
                 .clip(RoundedCornerShape(12.dp))
                 .background(item.color)
         ) {
-            // 這裡之後可以用 Image(painter = painterResource(...)) 替換
             Icon(
                 imageVector = Icons.Default.FitnessCenter,
                 contentDescription = null,
@@ -183,34 +348,29 @@ fun FeaturedCard(item: WorkoutItem) {
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(text = item.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Text(
-            text = "${item.duration} · ${item.level}",
-            color = Color.Gray,
-            fontSize = 14.sp
-        )
+        Text(text = "${item.duration} · ${item.level}", color = Color.Gray, fontSize = 14.sp)
     }
 }
 
 @Composable
-fun QuickWorkoutsSection() {
+fun QuickWorkoutsSection(onCardClick: (String, String) -> Unit) {
     val items = listOf(
-        WorkoutItem("早晨訓練", "15 min", null, Color(0xFF009688)), // 綠色
-        WorkoutItem("午時訓練", "20 min", null, Color(0xFFE91E63)), // 粉色
-        WorkoutItem("晚間放鬆", "25 min", null, Color(0xFF9C27B0))  // 紫色
+        WorkoutItem("早晨訓練", "15 min", null, Color(0xFF009688)),
+        WorkoutItem("午時訓練", "20 min", null, Color(0xFFE91E63)),
+        WorkoutItem("晚間放鬆", "25 min", null, Color(0xFF9C27B0))
     )
-
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         items(items) { item ->
-            QuickWorkoutCard(item)
+            QuickWorkoutCard(item, onClick = { onCardClick(item.title, item.duration) })
         }
     }
 }
 
 @Composable
-fun QuickWorkoutCard(item: WorkoutItem) {
-    Column(modifier = Modifier.width(160.dp)) {
+fun QuickWorkoutCard(item: WorkoutItem, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier.width(160.dp).clickable(onClick = onClick)
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -227,49 +387,6 @@ fun QuickWorkoutCard(item: WorkoutItem) {
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(text = item.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Text(
-            text = item.duration,
-            color = Color.Gray,
-            fontSize = 14.sp
-        )
-    }
-}
-
-@Composable
-fun BottomNavBar() {
-    NavigationBar(
-        containerColor = Color(0xFF1C1C1E) // 底部導航列背景色
-    ) {
-        // 定義導航項目
-        val items = listOf(
-            "Workout" to Icons.Filled.FitnessCenter,
-            "History" to Icons.Outlined.History,
-            "Profile" to Icons.Outlined.Person,
-            "Settings" to Icons.Outlined.Settings
-        )
-
-        items.forEachIndexed { index, (label, icon) ->
-            NavigationBarItem(
-                icon = { Icon(icon, contentDescription = label) },
-                label = { Text(label) },
-                selected = index == 0, // 假設目前選中第一個
-                onClick = { },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Color.White,
-                    selectedTextColor = Color.White,
-                    indicatorColor = Color(0xFF333333), // 選中時的背景圓圈
-                    unselectedIconColor = Color.Gray,
-                    unselectedTextColor = Color.Gray
-                )
-            )
-        }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun MainScreenPreview() {
-    GymAppTheme(darkTheme = true) {
-        MainScreen()
+        Text(text = item.duration, color = Color.Gray, fontSize = 14.sp)
     }
 }
