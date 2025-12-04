@@ -24,9 +24,10 @@ import kotlinx.coroutines.delay
 fun WorkoutExecutionScreen(
     navController: NavController,
     workoutTitle: String,
-    workoutDuration: String,
-    onWorkoutComplete: () -> Unit // 新增：完成訓練的 Callback
+    workoutDuration: String, // 接收 "30 min"
+    onWorkoutComplete: () -> Unit
 ) {
+    // 使用下方的輔助函式解析時間
     val totalSeconds = remember(workoutDuration) {
         parseDurationToSeconds(workoutDuration)
     }
@@ -40,7 +41,7 @@ fun WorkoutExecutionScreen(
             timeLeft--
         } else if (timeLeft == 0) {
             isRunning = false
-            onWorkoutComplete() // 時間到自動跳轉
+            onWorkoutComplete()
         }
     }
 
@@ -54,6 +55,7 @@ fun WorkoutExecutionScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
+        // Top Bar
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -71,6 +73,7 @@ fun WorkoutExecutionScreen(
             Spacer(modifier = Modifier.size(48.dp))
         }
 
+        // Timer Display
         Box(contentAlignment = Alignment.Center) {
             CircularProgressIndicator(
                 progress = { 1f },
@@ -101,6 +104,7 @@ fun WorkoutExecutionScreen(
             }
         }
 
+        // Controls
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -135,7 +139,6 @@ fun WorkoutExecutionScreen(
 
                 Spacer(modifier = Modifier.width(32.dp))
 
-                // 修改：點擊 Finish 按鈕觸發 onWorkoutComplete
                 Button(
                     onClick = onWorkoutComplete,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3F51B5)),
@@ -150,13 +153,17 @@ fun WorkoutExecutionScreen(
     }
 }
 
-// ... 輔助函式 (parseDurationToSeconds, formatTime) 保持不變，如果不在這個檔案要記得加上 ...
+// 關鍵：這個函式負責把 "30 min" 轉成 1800 秒
 fun parseDurationToSeconds(duration: String): Int {
     return try {
+        // 1. 去除前後空白
+        // 2. 用空格切割 ("30 min" -> ["30", "min"])
+        // 3. 取第一個元素 ("30")
+        // 4. 轉成整數
         val minutes = duration.trim().split(" ")[0].toInt()
         minutes * 60
     } catch (e: Exception) {
-        60
+        60 // 解析失敗時的預設值
     }
 }
 

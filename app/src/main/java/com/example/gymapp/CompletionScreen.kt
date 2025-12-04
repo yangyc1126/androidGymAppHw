@@ -5,8 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Star // 修改處：改用 Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -36,8 +36,9 @@ fun CompletionScreen(
                 .background(Color(0xFF2C2C2E), shape = CircleShape),
             contentAlignment = Alignment.Center
         ) {
+            // 修改處：將 EmojiEvents 換成 Star (星星)，這樣就不會報錯了
             Icon(
-                imageVector = Icons.Default.EmojiEvents, // 如果找不到這個 Icon，可以用 CheckCircle
+                imageVector = Icons.Default.Star,
                 contentDescription = "Trophy",
                 tint = Color(0xFFFFD700), // 金色
                 modifier = Modifier.size(80.dp)

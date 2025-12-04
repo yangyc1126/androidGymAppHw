@@ -1,6 +1,7 @@
 package com.example.gymapp
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,11 +27,14 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun LoginScreen(
-    onLoginSuccess: () -> Unit
+    onLoginClick: (String, String) -> Unit, // 傳遞帳號密碼給 MainActivity 處理
+    onSignUpClick: (String, String) -> Unit,
+    errorMessage: String? // 顯示錯誤訊息 (如：帳號不存在、密碼錯誤)
 ) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var isSignUpMode by remember { mutableStateOf(false) } // 切換登入/註冊模式
 
     Column(
         modifier = Modifier
@@ -40,7 +44,6 @@ fun LoginScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // App Logo
         Box(
             modifier = Modifier
                 .size(100.dp)
@@ -59,14 +62,14 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = "Welcome Back",
+            text = if (isSignUpMode) "Create Account" else "Welcome Back",
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White
         )
 
         Text(
-            text = "Sign in to continue",
+            text = if (isSignUpMode) "Sign up to get started" else "Sign in to continue",
             fontSize = 16.sp,
             color = Color.Gray,
             modifier = Modifier.padding(top = 8.dp)
@@ -74,7 +77,16 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Username Field
+        // 錯誤訊息顯示
+        if (errorMessage != null) {
+            Text(
+                text = errorMessage,
+                color = Color.Red,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+        }
+
         OutlinedTextField(
             value = username,
             onValueChange = { username = it },
@@ -96,17 +108,13 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Password Field
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
             label = { Text("Password") },
             leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
             trailingIcon = {
-                val image = if (passwordVisible)
-                    Icons.Filled.Visibility
-                else Icons.Filled.VisibilityOff
-
+                val image = if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(imageVector = image, contentDescription = null)
                 }
@@ -129,22 +137,38 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Login Button
         Button(
-            onClick = onLoginSuccess,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp),
+            onClick = {
+                if (username.isNotBlank() && password.isNotBlank()) {
+                    if (isSignUpMode) {
+                        onSignUpClick(username, password)
+                    } else {
+                        onLoginClick(username, password)
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(50.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3F51B5)),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Text("Login", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = if (isSignUpMode) "Sign Up" else "Login",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        TextButton(onClick = { /* TODO: Forgot Password */ }) {
-            Text("Forgot Password?", color = Color.Gray)
+        // 切換模式按鈕
+        TextButton(onClick = {
+            isSignUpMode = !isSignUpMode
+            // 切換時清除欄位可能比較好，這裡暫時保留
+        }) {
+            Text(
+                text = if (isSignUpMode) "Already have an account? Login" else "Don't have an account? Sign Up",
+                color = Color.Gray
+            )
         }
     }
 }
